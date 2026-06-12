@@ -1,0 +1,51 @@
+import type { ControllerState } from '../engine/input.js'
+
+export type TeamId = 0 | 1
+
+export interface Vec2 {
+  x: number
+  y: number
+}
+
+export interface Player {
+  id: number
+  team: TeamId
+  pos: Vec2
+  vel: Vec2
+  facing: Vec2       // normalized direction for sprite selection
+  hasBall: boolean
+  isActive: boolean  // currently controlled by human input
+  isKeeper: boolean
+  slideTimer: number // > 0 while sliding
+  kickCooldown: number
+}
+
+export interface Ball {
+  pos: Vec2
+  vel: Vec2
+  z: number          // height above ground (for lofted shots)
+  vz: number         // vertical velocity
+  owner: number | null // player id, null if loose
+}
+
+export type MatchPhase =
+  | 'kickoff'
+  | 'play'
+  | 'goal_celebration'
+  | 'halftime'
+  | 'fulltime'
+
+export interface MatchState {
+  phase: MatchPhase
+  phaseTimer: number   // seconds remaining in current phase
+  half: 1 | 2
+  matchTimer: number   // seconds remaining in current half
+  score: [number, number]
+  players: Player[]
+  ball: Ball
+  activePlayer: [number, number] // player id for each team's human control
+  halfLength: number   // configurable, default 3 minutes
+  difficulty: 1 | 2 | 3
+}
+
+export { ControllerState }

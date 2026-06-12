@@ -1,0 +1,8 @@
+name = "soccer-game"
+compatibility_date = "2024-01-01"
+pages_build_output_dir = "dist"
+
+[[kv_namespaces]]
+binding = "SCORES"
+id = "0b9a17b21a9a46639753da71241b931e"
+preview_id = "0637639f7cb44009907ba4344a15f40a"
