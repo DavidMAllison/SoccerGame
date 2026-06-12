@@ -1,21 +1,20 @@
-import type { Player, Ball } from '../types.js'
+import type { Player, Ball, CountryKit } from '../types.js'
 import type { Camera } from '../systems/camera.js'
 
-// NES-style palette (limited, slightly desaturated)
-const TEAM = [
-  { body: '#c42020', dark: '#7a1010', light: '#e86060', shorts: '#f8f8f8' },
-  { body: '#1a30b8', dark: '#0d1870', light: '#5870e0', shorts: '#f8f8f8' },
-] as const
-
-const SKIN        = '#e8b870'
-const SKIN_DARK   = '#c0904a'
-const BOOT        = '#282828'
+const SKIN      = '#e8b870'
+const SKIN_DARK = '#c0904a'
+const BOOT      = '#282828'
 
 // Draws a top-down NES-style player at screen coords (sx, sy)
-export function drawPlayer(ctx: CanvasRenderingContext2D, p: Player, cam: Camera) {
+export function drawPlayer(
+  ctx: CanvasRenderingContext2D,
+  p: Player,
+  cam: Camera,
+  teamKits: [CountryKit, CountryKit],
+) {
   const sx = Math.round(p.pos.x - cam.x)
   const sy = Math.round(p.pos.y)
-  const pal = TEAM[p.team]
+  const kit = teamKits[p.team]
   const sliding = p.slideTimer > 0
   const angle = Math.atan2(p.facing.y, p.facing.x)
 
@@ -35,9 +34,9 @@ export function drawPlayer(ctx: CanvasRenderingContext2D, p: Player, cam: Camera
 
   if (sliding) {
     // Sliding: flat elongated body
-    ctx.fillStyle = pal.body
+    ctx.fillStyle = kit.home
     ctx.fillRect(-10, -4, 20, 8)
-    ctx.fillStyle = pal.dark
+    ctx.fillStyle = 'rgba(0,0,0,0.35)'
     ctx.fillRect(-10, -4, 4, 8)  // shorts patch
     // Boots sticking out
     ctx.fillStyle = BOOT
@@ -45,13 +44,13 @@ export function drawPlayer(ctx: CanvasRenderingContext2D, p: Player, cam: Camera
     ctx.fillRect(8, 1, 4, 4)
   } else {
     // Upright: jersey body
-    ctx.fillStyle = pal.body
+    ctx.fillStyle = kit.home
     ctx.fillRect(-5, -7, 10, 9)
-    // Shirt number stripe
-    ctx.fillStyle = pal.light
+    // Shirt number stripe (semi-transparent highlight)
+    ctx.fillStyle = 'rgba(255,255,255,0.35)'
     ctx.fillRect(-2, -6, 4, 3)
     // Shorts
-    ctx.fillStyle = pal.shorts
+    ctx.fillStyle = kit.away
     ctx.fillRect(-5, 2, 10, 4)
     // Boots (two pixels)
     ctx.fillStyle = BOOT

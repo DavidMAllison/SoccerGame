@@ -54,7 +54,7 @@ export function tickRules(state: MatchState, dt: number) {
     state.phaseTimer -= dt
     if (state.phaseTimer <= 0) {
       resetFormation(state)
-      state.phase = 'kickoff'
+      state.phase = 'play'  // auto-restart; no stuck kickoff waiting for button press
       state.phaseTimer = 0
     }
   }

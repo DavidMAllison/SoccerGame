@@ -6,3 +6,8 @@ pages_build_output_dir = "dist"
 binding = "SCORES"
 id = "0b9a17b21a9a46639753da71241b931e"
 preview_id = "0637639f7cb44009907ba4344a15f40a"
+
+[[kv_namespaces]]
+binding = "SIMS"
+id = "0283025a9fbb4530bf7d7fd3b15a71bb"
+preview_id = "bc83249b7c8d499fae5aa9d7a8614549"

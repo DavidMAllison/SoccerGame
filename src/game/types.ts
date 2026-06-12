@@ -1,4 +1,7 @@
 import type { ControllerState } from '../engine/input.js'
+import type { CountryKit } from './countries.js'
+
+export type { CountryKit }
 
 export type TeamId = 0 | 1
 
@@ -35,6 +38,13 @@ export type MatchPhase =
   | 'halftime'
   | 'fulltime'
 
+export interface MatchConfig {
+  teams: [CountryKit, CountryKit]
+  playerName: string
+  matchId: string | null
+  returnUrl: string | null
+}
+
 export interface MatchState {
   phase: MatchPhase
   phaseTimer: number   // seconds remaining in current phase
@@ -46,6 +56,7 @@ export interface MatchState {
   activePlayer: [number, number] // player id for each team's human control
   halfLength: number   // configurable, default 3 minutes
   difficulty: 1 | 2 | 3
+  config: MatchConfig
 }
 
 export { ControllerState }

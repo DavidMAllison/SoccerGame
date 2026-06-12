@@ -93,7 +93,7 @@ const SFX: Record<string, number[]> = {
   whistle: [0.6, 0.02, 880, 0,  0.15, 0.25, 0, 2,    0,   0,    20, 0.1, 0, 0, 10, 0, 0, 1, 0, 0.3],
 }
 
-let muted = false
+let muted = true
 
 export function playSfx(name: keyof typeof SFX) {
   if (muted) return

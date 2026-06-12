@@ -1,10 +1,12 @@
 import type { Scene } from '../../engine/scene.js'
-import type { MatchState, Player, ControllerState } from '../types.js'
+import type { MatchState, MatchConfig, Player, ControllerState } from '../types.js'
 import { readP1, readP2, EMPTY_CONTROLLER } from '../../engine/input.js'
 import { playSfx } from '../../engine/audio.js'
 import { submitScore } from '../../net/leaderboard.js'
+import { submitSimulation } from '../../net/simulations.js'
 import { GAME_W, GAME_H } from '../../engine/renderer.js'
 import { PITCH_W, PITCH_H, PITCH_Y, DEFAULT_HALF_LENGTH, PLAYER_RADIUS } from '../constants.js'
+import { getCountry } from '../countries.js'
 import { applyControl, tryKick, trySlide } from '../systems/playerControl.js'
 import { createCamera, updateCameraForMatch, type Camera } from '../systems/camera.js'
 import { tickBall } from '../systems/ballPhysics.js'
@@ -24,7 +26,14 @@ interface AIContext {
 
 const COORDINATOR_INTERVAL = 6  // re-assign roles every 6 ticks (~10Hz)
 
-function initState(): MatchState {
+const DEFAULT_CONFIG: MatchConfig = {
+  teams: [getCountry('RED', 0), getCountry('BLU', 1)],
+  playerName: '',
+  matchId: null,
+  returnUrl: null,
+}
+
+function initState(config: MatchConfig = DEFAULT_CONFIG): MatchState {
   const cy = PITCH_Y + PITCH_H / 2
   const cx = PITCH_W / 2
 
@@ -59,6 +68,7 @@ function initState(): MatchState {
     ball: { pos: { x: cx, y: cy }, vel: { x: 0, y: 0 }, z: 0, vz: 0, owner: null },
     activePlayer: [3, 8],
     halfLength: DEFAULT_HALF_LENGTH, difficulty: 1,
+    config,
   }
 }
 
@@ -96,7 +106,7 @@ interface NameEntry {
 }
 
 export class MatchScene implements Scene {
-  private state: MatchState = initState()
+  private state!: MatchState
   private cam: Camera = createCamera()
   private p1APrev = false
   private p2APrev = false
@@ -104,9 +114,12 @@ export class MatchScene implements Scene {
   private cpu: 0 | 1 | null = 1
   private aiCtx: AIContext = { roles: new Map(), ticksSinceUpdate: 0 }
   private nameEntry: NameEntry | null = null
+  private simSubmitted = false
+
+  constructor(private matchConfig: MatchConfig = DEFAULT_CONFIG) {}
 
   onEnter() {
-    this.state = initState()
+    this.state = initState(this.matchConfig)
     this.cam = createCamera()
     this.cam.x = PITCH_W / 2 - 128
     this.p1APrev = false
@@ -114,6 +127,7 @@ export class MatchScene implements Scene {
     this.switchCooldown = [0, 0]
     this.aiCtx = { roles: new Map(), ticksSinceUpdate: 0 }
     this.nameEntry = null
+    this.simSubmitted = false
   }
 
   private getCpuControl(player: Player): ControllerState {
@@ -131,6 +145,14 @@ export class MatchScene implements Scene {
     // Name entry at fulltime
     if (state.phase === 'fulltime') {
       this.tickNameEntry(dt)
+      return
+    }
+
+    // During goal celebration: only tick the countdown, freeze everything else.
+    // Skipping tickBall here prevents the ball (still past the goal line) from
+    // firing a new goal event every tick for the full celebration duration.
+    if (state.phase === 'goal_celebration') {
+      tickRules(state, dt)
       return
     }
 
@@ -201,6 +223,8 @@ export class MatchScene implements Scene {
     } else {
       checkPossession(state)
       this.checkSlideTackle(state)
+      // Auto-switch human team to whoever just picked up the ball
+      this.autoSwitchToBallCarrier()
     }
 
     tickRules(state, dt)
@@ -211,6 +235,18 @@ export class MatchScene implements Scene {
 
     const activeP1 = state.players.find(p => p.id === state.activePlayer[0])!
     updateCameraForMatch(this.cam, state.ball.pos.x, activeP1.pos.x, state.ball.owner !== null)
+  }
+
+  private autoSwitchToBallCarrier() {
+    const { state } = this
+    if (state.ball.owner === null) return
+    const owner = state.players.find(p => p.id === state.ball.owner)
+    if (!owner || owner.team === this.cpu) return  // CPU team — no switch
+    const team = owner.team
+    if (owner.id === state.activePlayer[team]) return  // already active
+    state.players.find(p => p.id === state.activePlayer[team])!.isActive = false
+    owner.isActive = true
+    state.activePlayer[team] = owner.id
   }
 
   private checkSlideTackle(state: MatchState) {
@@ -235,7 +271,7 @@ export class MatchScene implements Scene {
     drawPitch(ctx, cam.x)
 
     const sorted = [...state.players].sort((a, b) => a.pos.y - b.pos.y)
-    for (const p of sorted) drawPlayer(ctx, p, cam)
+    for (const p of sorted) drawPlayer(ctx, p, cam, state.config.teams)
 
     drawBall(ctx, state.ball, cam)
     drawHud(ctx, state)
@@ -246,32 +282,55 @@ export class MatchScene implements Scene {
 
   private tickNameEntry(dt: number) {
     const { state } = this
+    const { matchId, playerName, returnUrl, teams } = state.config
 
-    // Initialise name entry once on first fulltime tick
+    // If launched from pool site: auto-submit once, skip arcade name entry
+    if (matchId && !this.simSubmitted) {
+      this.simSubmitted = true
+      submitSimulation({
+        playerName: playerName || 'ANON',
+        matchId,
+        team0: teams[0].code,
+        team1: teams[1].code,
+        score0: state.score[0],
+        score1: state.score[1],
+        playedAs: 0,
+        ts: Date.now(),
+      }).catch(() => {})
+      return
+    }
+
+    if (matchId) return  // pool-site mode: no further name-entry input handling
+
+    // Standalone mode: arcade name entry
     if (!this.nameEntry) {
       this.nameEntry = { chars: [0, 0, 0], cursor: 0, submitted: false, blink: 0 }
     }
     const ne = this.nameEntry
-    if (ne.submitted) return
+    if (ne.submitted) {
+      const p1 = readP1()
+      // Z to play again
+      if (p1.a && !this.p1APrev && returnUrl) {
+        window.location.href = returnUrl
+      }
+      this.p1APrev = p1.a
+      return
+    }
 
     ne.blink += dt
 
     const p1 = readP1()
 
-    // Up/down scroll the current char (using dy)
     if (ne.blink > 0.12) {
       ne.blink = 0
-      // Read held direction once per interval to allow scrolling
       if (p1.dy < 0) ne.chars[ne.cursor] = (ne.chars[ne.cursor] - 1 + CHARS.length) % CHARS.length
       if (p1.dy > 0) ne.chars[ne.cursor] = (ne.chars[ne.cursor] + 1) % CHARS.length
     }
 
-    // A = advance cursor / confirm
     if (p1.a && !this.p1APrev) {
       if (ne.cursor < 2) {
         ne.cursor++
       } else {
-        // Submit
         ne.submitted = true
         const name = ne.chars.map(i => CHARS[i]).join('')
         submitScore(name, state.score[0], state.score[1]).catch(() => {})
@@ -306,15 +365,22 @@ function drawFulltimeOverlay(
   ctx.font = 'bold 14px monospace'
   ctx.fillText('FULL TIME', GAME_W / 2, 50)
 
+  const [t0, t1] = state.config.teams
   ctx.font = '22px monospace'
   ctx.fillStyle = '#ffff00'
   ctx.fillText(`${state.score[0]}  -  ${state.score[1]}`, GAME_W / 2, 80)
 
-  const winner = state.score[0] > state.score[1] ? 'RED WINS'
-               : state.score[1] > state.score[0] ? 'BLUE WINS' : 'DRAW'
+  const winner = state.score[0] > state.score[1] ? `${t0.flag} ${t0.code} WINS`
+               : state.score[1] > state.score[0] ? `${t1.flag} ${t1.code} WINS` : 'DRAW'
   ctx.fillStyle = '#aaffaa'
   ctx.font = '10px monospace'
   ctx.fillText(winner, GAME_W / 2, 98)
+
+  if (state.config.returnUrl) {
+    ctx.fillStyle = '#888888'
+    ctx.font = '7px monospace'
+    ctx.fillText('PRESS Z TO RETURN TO MATCH CENTRE', GAME_W / 2, 170)
+  }
 
   if (nameEntry && !nameEntry.submitted) {
     // Name entry UI

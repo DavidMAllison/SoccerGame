@@ -58,6 +58,12 @@ export function tryKick(
     return 'kick'
   }
   if (ctrl.b) {
+    // Redirect shot toward opponent goal if facing wrong way
+    const ownGoalDir = player.team === 0 ? -1 : 1
+    if (Math.sign(player.facing.x) === ownGoalDir || Math.abs(player.facing.x) < 0.1) {
+      player.facing.x = -ownGoalDir * 0.85
+      player.facing.y = Math.sign(player.facing.y) * 0.53
+    }
     releaseBall(player, ball, SHOOT_POWER, SHOOT_LOFT)
     return 'shoot'
   }
