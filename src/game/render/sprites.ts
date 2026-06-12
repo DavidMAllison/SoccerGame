@@ -63,7 +63,7 @@ function drawSliding(ctx: CanvasRenderingContext2D, skin: number, kit: CountryKi
   ctx.fillRect(-10, -4, 20, 8)
   ctx.fillStyle = 'rgba(0,0,0,0.35)'
   ctx.fillRect(-10, -4, 4, 8)
-  ctx.fillStyle = BOOT
+  ctx.fillStyle = kit.home  // team-coloured boot
   ctx.fillRect(8, -5, 4, 4)
   ctx.fillRect(8, 1, 4, 4)
 }
@@ -94,6 +94,11 @@ function drawUpright(
     case 7: drawAlien(ctx, kit, hx, hy); break
     default: drawClassic(ctx, kit, hx, hy); break
   }
+
+  // Team-coloured boots drawn last — consistent team ID across all skins
+  ctx.fillStyle = kit.home
+  ctx.fillRect(-5, 6, 4, 4)
+  ctx.fillRect(1, 6, 4, 4)
 }
 
 // ─── Skin 0: Classic NES ──────────────────────────────────────────────────────
