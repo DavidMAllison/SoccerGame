@@ -1,5 +1,5 @@
 import type { MatchState } from '../types.js'
-import { POSSESSION_RADIUS, PLAYER_RADIUS, BALL_RADIUS } from '../constants.js'
+import { POSSESSION_RADIUS, PLAYER_RADIUS, BALL_RADIUS, PITCH_X, PITCH_Y, PITCH_W, PITCH_H } from '../constants.js'
 
 export function lockBallToOwner(state: MatchState) {
   const { ball, players } = state
@@ -8,9 +8,12 @@ export function lockBallToOwner(state: MatchState) {
   const owner = players.find(p => p.id === ball.owner)
   if (!owner) { ball.owner = null; return }
 
-  // Ball sits just ahead of player in facing direction
-  ball.pos.x = owner.pos.x + owner.facing.x * (PLAYER_RADIUS + BALL_RADIUS + 1)
-  ball.pos.y = owner.pos.y + owner.facing.y * (PLAYER_RADIUS + BALL_RADIUS + 1)
+  // Ball sits just ahead of player in facing direction, clamped to pitch
+  // (prevents goalkeeper's ball spawning past goal line when facing own goal)
+  ball.pos.x = Math.max(PITCH_X + BALL_RADIUS, Math.min(PITCH_X + PITCH_W - BALL_RADIUS,
+    owner.pos.x + owner.facing.x * (PLAYER_RADIUS + BALL_RADIUS + 1)))
+  ball.pos.y = Math.max(PITCH_Y + BALL_RADIUS, Math.min(PITCH_Y + PITCH_H - BALL_RADIUS,
+    owner.pos.y + owner.facing.y * (PLAYER_RADIUS + BALL_RADIUS + 1)))
   ball.vel.x = 0
   ball.vel.y = 0
   ball.z = 0

@@ -19,8 +19,10 @@ export function createRenderer(canvas: HTMLCanvasElement): Renderer {
 
     let scale: number
     if (isTouch) {
-      // Mobile: fill width, leave 120px at bottom for touch controls
-      const availH = windowH - 120
+      const isLandscape = windowW > windowH
+      // Portrait: reserve 120px at bottom for d-pad / buttons
+      // Landscape: buttons overlay the canvas edges — no height reservation needed
+      const availH = isLandscape ? windowH : windowH - 120
       scale = Math.min(windowW / GAME_W, availH / GAME_H)
     } else {
       // Desktop: integer scale for pixel-perfect rendering

@@ -124,8 +124,8 @@ export function initTouchControls(): void {
   dpad.addEventListener('touchcancel', resetDpad)
 
   // ── Buttons ────────────────────────────────────────────────────────────────
-  const btnA = makeButton('KICK',  '#c42020', 'rgba(196,32,32,0.75)', 'bottom:80px;right:16px')
-  const btnB = makeButton('SHOOT', '#1a30b8', 'rgba(26,48,184,0.75)', 'bottom:14px;right:16px')
+  const btnA = makeButton('KICK', 'SWITCH', '#c42020', 'rgba(196,32,32,0.75)', 'bottom:80px;right:16px')
+  const btnB = makeButton('SHOOT', '',       '#1a30b8', 'rgba(26,48,184,0.75)', 'bottom:14px;right:16px')
 
   wireButton(btnA, 'a')
   wireButton(btnB, 'b')
@@ -179,7 +179,7 @@ function wireButton(btn: HTMLElement, key: 'a' | 'b') {
   btn.addEventListener('touchcancel', release)
 }
 
-function makeButton(label: string, border: string, bg: string, pos: string): HTMLElement {
+function makeButton(label: string, sub: string, border: string, bg: string, pos: string): HTMLElement {
   const btn = el('div', {
     position: 'fixed',
     width: '64px', height: '64px',
@@ -197,7 +197,17 @@ function makeButton(label: string, border: string, bg: string, pos: string): HTM
     boxShadow: `0 2px 8px rgba(0,0,0,0.5)`,
   })
   btn.setAttribute('style', btn.getAttribute('style')! + pos)
-  btn.textContent = label
+  const main = document.createElement('span')
+  main.textContent = label
+  btn.appendChild(main)
+  if (sub) {
+    const s = document.createElement('span')
+    s.textContent = sub
+    s.style.fontSize = '8px'
+    s.style.opacity = '0.75'
+    s.style.marginTop = '2px'
+    btn.appendChild(s)
+  }
   return btn
 }
 

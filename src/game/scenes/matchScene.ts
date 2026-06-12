@@ -20,7 +20,7 @@ import { keeperControl } from '../ai/goalkeeper.js'
 import { fieldPlayerControl } from '../ai/fieldPlayer.js'
 
 interface AIContext {
-  roles: RoleMap
+  roles: [RoleMap, RoleMap]  // [team0, team1]
   ticksSinceUpdate: number
 }
 
@@ -113,7 +113,7 @@ export class MatchScene implements Scene {
   private p2APrev = false
   private switchCooldown = [0, 0]
   private cpu: 0 | 1 | null = 1
-  private aiCtx: AIContext = { roles: new Map(), ticksSinceUpdate: 0 }
+  private aiCtx: AIContext = { roles: [new Map(), new Map()], ticksSinceUpdate: 0 }
   private nameEntry: NameEntry | null = null
   private simSubmitted = false
 
@@ -126,7 +126,7 @@ export class MatchScene implements Scene {
     this.p1APrev = false
     this.p2APrev = false
     this.switchCooldown = [0, 0]
-    this.aiCtx = { roles: new Map(), ticksSinceUpdate: 0 }
+    this.aiCtx = { roles: [new Map(), new Map()], ticksSinceUpdate: 0 }
     this.nameEntry = null
     this.simSubmitted = false
   }
@@ -136,7 +136,7 @@ export class MatchScene implements Scene {
     if (player.isKeeper) {
       return keeperControl(player, state, state.difficulty)
     }
-    const role = this.aiCtx.roles.get(player.id) ?? 'support'
+    const role = this.aiCtx.roles[player.team].get(player.id) ?? 'support'
     return fieldPlayerControl(player, role, state, state.difficulty)
   }
 
@@ -168,9 +168,8 @@ export class MatchScene implements Scene {
     // Update coordinator at 10Hz
     this.aiCtx.ticksSinceUpdate++
     if (this.aiCtx.ticksSinceUpdate >= COORDINATOR_INTERVAL) {
-      if (this.cpu !== null) {
-        this.aiCtx.roles = assignRoles(state, this.cpu)
-      }
+      this.aiCtx.roles[0] = assignRoles(state, 0)
+      this.aiCtx.roles[1] = assignRoles(state, 1)
       this.aiCtx.ticksSinceUpdate = 0
     }
 
