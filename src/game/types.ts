@@ -21,6 +21,7 @@ export interface Player {
   isKeeper: boolean
   slideTimer: number // > 0 while sliding
   kickCooldown: number
+  skin: number       // 0-7, assigned randomly at match start
 }
 
 export interface Ball {

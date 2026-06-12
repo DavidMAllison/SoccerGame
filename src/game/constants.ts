@@ -28,7 +28,7 @@ export const SHOOT_LOFT        = 80    // vz for a full shot
 export const POSSESSION_RADIUS = 14   // capture distance
 
 // Match
-export const DEFAULT_HALF_LENGTH = 180  // 3 minutes in seconds
+export const DEFAULT_HALF_LENGTH = 120  // 2 minutes in seconds
 export const GOAL_CELEBRATION_TIME = 3  // seconds
 
 // Kick cooldown prevents double-kicks

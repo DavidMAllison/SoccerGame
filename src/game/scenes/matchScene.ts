@@ -1,6 +1,6 @@
 import type { Scene } from '../../engine/scene.js'
 import type { MatchState, MatchConfig, Player, ControllerState } from '../types.js'
-import { readP1, readP2, EMPTY_CONTROLLER } from '../../engine/input.js'
+import { readP1, readP2 } from '../../engine/input.js'
 import { playSfx } from '../../engine/audio.js'
 import { submitScore } from '../../net/leaderboard.js'
 import { submitSimulation } from '../../net/simulations.js'
@@ -44,6 +44,7 @@ function initState(config: MatchConfig = DEFAULT_CONFIG): MatchState {
     facing: { x: team === 0 ? 1 : -1, y: 0 },
     hasBall: false, isActive: false, isKeeper,
     slideTimer: 0, kickCooldown: 0,
+    skin: Math.floor(Math.random() * 8),
   })
 
   const players: Player[] = [
@@ -200,9 +201,14 @@ export class MatchScene implements Scene {
         // CPU-controlled team: all players get AI input
         ctrl = this.getCpuControl(p)
       } else {
-        // Human team: only active player responds to input
-        const humanCtrl = p.team === 0 ? p1 : p2
-        ctrl = p.id === state.activePlayer[p.team] ? humanCtrl : EMPTY_CONTROLLER
+        // Human team: active player gets human input;
+        // non-active players use AI positioning (movement only, never kick)
+        if (p.id === state.activePlayer[p.team]) {
+          ctrl = p.team === 0 ? p1 : p2
+        } else {
+          const aiCtrl = this.getCpuControl(p)
+          ctrl = { dx: aiCtrl.dx, dy: aiCtrl.dy, a: false, b: false }
+        }
       }
 
       const kicked = tryKick(p, state.ball, ctrl)
@@ -284,23 +290,29 @@ export class MatchScene implements Scene {
     const { state } = this
     const { matchId, playerName, returnUrl, teams } = state.config
 
-    // If launched from pool site: auto-submit once, skip arcade name entry
-    if (matchId && !this.simSubmitted) {
-      this.simSubmitted = true
-      submitSimulation({
-        playerName: playerName || 'ANON',
-        matchId,
-        team0: teams[0].code,
-        team1: teams[1].code,
-        score0: state.score[0],
-        score1: state.score[1],
-        playedAs: 0,
-        ts: Date.now(),
-      }).catch(() => {})
+    if (matchId) {
+      // Auto-submit once on first fulltime tick
+      if (!this.simSubmitted) {
+        this.simSubmitted = true
+        submitSimulation({
+          playerName: playerName || 'ANON',
+          matchId,
+          team0: teams[0].code,
+          team1: teams[1].code,
+          score0: state.score[0],
+          score1: state.score[1],
+          playedAs: 0,
+          ts: Date.now(),
+        }).catch(() => {})
+      }
+      // Z to return to pool site
+      const p1 = readP1()
+      if (p1.a && !this.p1APrev && returnUrl) {
+        window.location.href = returnUrl
+      }
+      this.p1APrev = p1.a
       return
     }
-
-    if (matchId) return  // pool-site mode: no further name-entry input handling
 
     // Standalone mode: arcade name entry
     if (!this.nameEntry) {
