@@ -21,9 +21,10 @@ function parseMatchConfig(): MatchConfig | null {
   if (!t0 || !t1) return null
   return {
     teams: [getCountry(t0, 0), getCountry(t1, 1)],
-    playerName: '',
+    playerName: 'SIMULATION',
     matchId: params.get('match'),
     returnUrl: params.get('return'),
+    simulate: params.get('mode') === 'sim',
   }
 }
 
@@ -35,11 +36,16 @@ function startMatch(config: MatchConfig) {
 }
 
 if (matchConfig) {
-  // Pool-site mode: go straight to pre-match name entry, skip title screen
-  const pre = new PreMatchScene(matchConfig, canvas, (playerName) => {
-    startMatch({ ...matchConfig, playerName })
-  })
-  scenes.transition(pre)
+  if (matchConfig.simulate) {
+    // Simulation mode: skip pre-match, go straight to headless match
+    scenes.transition(new MatchScene(matchConfig))
+  } else {
+    // Pool-site mode: go straight to pre-match name entry, skip title screen
+    const pre = new PreMatchScene(matchConfig, canvas, (playerName) => {
+      startMatch({ ...matchConfig, playerName })
+    })
+    scenes.transition(pre)
+  }
 } else {
   // Standalone mode: title screen → match
   class BootTitleScene extends TitleScene {

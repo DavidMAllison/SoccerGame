@@ -129,6 +129,75 @@ export class MatchScene implements Scene {
     this.aiCtx = { roles: [new Map(), new Map()], ticksSinceUpdate: 0 }
     this.nameEntry = null
     this.simSubmitted = false
+
+    if (this.matchConfig.simulate) this.runSimulation()
+  }
+
+  private runSimulation() {
+    const { state } = this
+    const DT = 1 / 60
+
+    let ticks = 0
+    while (state.phase !== 'fulltime' && ticks++ < 30000) {
+      // Auto-start kickoff phases (both halves)
+      if (state.phase === 'kickoff') startPlay(state)
+
+      if (state.phase === 'goal_celebration') {
+        tickRules(state, DT)
+        continue
+      }
+
+      // Coordinator at 10Hz
+      this.aiCtx.ticksSinceUpdate++
+      if (this.aiCtx.ticksSinceUpdate >= COORDINATOR_INTERVAL) {
+        this.aiCtx.roles[0] = assignRoles(state, 0)
+        this.aiCtx.roles[1] = assignRoles(state, 1)
+        this.aiCtx.ticksSinceUpdate = 0
+      }
+
+      // All players: full AI including kicks
+      for (const p of state.players) {
+        const ctrl = this.getCpuControl(p)
+        tryKick(p, state.ball, ctrl)
+        if (!p.hasBall) trySlide(p, ctrl)
+        applyControl(p, ctrl, DT)
+      }
+
+      lockBallToOwner(state)
+      const goalEvent = tickBall(state, DT)
+      if (goalEvent) {
+        onGoal(state, goalEvent)
+      } else {
+        checkPossession(state)
+      }
+
+      tickRules(state, DT)
+
+      if (state.phase === 'play') {
+        state.matchTimer = Math.max(0, state.matchTimer - DT)
+      }
+    }
+
+    // Submit result
+    const { matchId, teams, returnUrl } = this.matchConfig
+    if (matchId && !this.simSubmitted) {
+      this.simSubmitted = true
+      submitSimulation({
+        playerName: 'SIMULATION',
+        matchId,
+        team0: teams[0].code,
+        team1: teams[1].code,
+        score0: state.score[0],
+        score1: state.score[1],
+        playedAs: 0,
+        ts: Date.now(),
+      }).catch(() => {})
+    }
+
+    // Redirect after a brief pause so the result is visible
+    if (returnUrl) {
+      setTimeout(() => { window.location.href = returnUrl }, 1500)
+    }
   }
 
   private getCpuControl(player: Player): ControllerState {
@@ -140,7 +209,10 @@ export class MatchScene implements Scene {
     return fieldPlayerControl(player, role, state, state.difficulty)
   }
 
-  tick(dt: number) {
+  tick(_dt: number) {
+    if (this.matchConfig.simulate) return  // sim ran synchronously in onEnter
+
+    const dt = _dt
     const { state } = this
 
     // Name entry at fulltime
@@ -273,6 +345,11 @@ export class MatchScene implements Scene {
   render(ctx: CanvasRenderingContext2D, _alpha: number) {
     const { state, cam } = this
 
+    if (this.matchConfig.simulate) {
+      drawSimOverlay(ctx, state)
+      return
+    }
+
     drawPitch(ctx, cam.x)
 
     const sorted = [...state.players].sort((a, b) => a.pos.y - b.pos.y)
@@ -349,6 +426,35 @@ export class MatchScene implements Scene {
     }
     this.p1APrev = p1.a
   }
+}
+
+function drawSimOverlay(ctx: CanvasRenderingContext2D, state: MatchState) {
+  ctx.fillStyle = '#0a0a1a'
+  ctx.fillRect(0, 0, GAME_W, GAME_H)
+  ctx.textAlign = 'center'
+
+  ctx.fillStyle = '#888888'
+  ctx.font = '8px monospace'
+  ctx.fillText('SIMULATION', GAME_W / 2, 70)
+
+  const [t0, t1] = state.config.teams
+  ctx.fillStyle = '#ffffff'
+  ctx.font = '10px monospace'
+  ctx.fillText(`${t0.code}  vs  ${t1.code}`, GAME_W / 2, 90)
+
+  ctx.fillStyle = '#ffff00'
+  ctx.font = '28px monospace'
+  ctx.fillText(`${state.score[0]}  -  ${state.score[1]}`, GAME_W / 2, 126)
+
+  const winner = state.score[0] > state.score[1] ? `${t0.code} WIN`
+               : state.score[1] > state.score[0] ? `${t1.code} WIN` : 'DRAW'
+  ctx.fillStyle = '#aaffaa'
+  ctx.font = '10px monospace'
+  ctx.fillText(winner, GAME_W / 2, 148)
+
+  ctx.fillStyle = '#444466'
+  ctx.font = '7px monospace'
+  ctx.fillText('redirecting...', GAME_W / 2, 180)
 }
 
 function drawGoalOverlay(ctx: CanvasRenderingContext2D, state: MatchState) {

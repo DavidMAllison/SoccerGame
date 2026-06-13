@@ -44,6 +44,7 @@ export interface MatchConfig {
   playerName: string
   matchId: string | null
   returnUrl: string | null
+  simulate?: boolean  // CPU vs CPU tight-loop, no rendering
 }
 
 export interface MatchState {
