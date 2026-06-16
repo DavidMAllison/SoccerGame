@@ -3,8 +3,9 @@ import type { SceneManager } from '../../engine/scene.js'
 import { GAME_W, GAME_H } from '../../engine/renderer.js'
 
 export class TitleScene implements Scene {
-  private blink = 0
-  private showPress = true
+  protected blink = 0
+  protected showPress = true
+  protected menuIndex = 0  // 0 = 1P vs CPU, 1 = MULTIPLAYER
 
   constructor(protected scenes: SceneManager) {}
 
@@ -52,22 +53,31 @@ export class TitleScene implements Scene {
     ctx.fillStyle = '#446644'
     ctx.fillRect(20, 88, GAME_W - 40, 1)
 
-    // Mode info
-    ctx.fillStyle = '#aaaaff'
-    ctx.font = '8px monospace'
-    ctx.fillText('1 PLAYER vs CPU', GAME_W / 2, 104)
+    // Menu options
+    const options = ['1 PLAYER vs CPU', 'MULTIPLAYER']
+    const isMobile = navigator.maxTouchPoints > 0
+    for (let i = 0; i < options.length; i++) {
+      const y = 104 + i * 18
+      const selected = this.menuIndex === i
+      if (selected) {
+        ctx.fillStyle = 'rgba(255,255,255,0.12)'
+        ctx.fillRect(GAME_W / 2 - 56, y - 10, 112, 14)
+        ctx.fillStyle = '#ffff00'
+      } else {
+        ctx.fillStyle = '#555577'
+      }
+      ctx.font = selected ? 'bold 8px monospace' : '8px monospace'
+      ctx.fillText((selected ? '> ' : '  ') + options[i], GAME_W / 2, y)
+    }
 
-    ctx.fillStyle = '#888888'
-    ctx.font = '7px monospace'
-    ctx.fillText('P1: ARROWS + Z/X', GAME_W / 2, 120)
-    ctx.fillText('Z = KICK   X = SHOOT', GAME_W / 2, 130)
-    ctx.fillText('Z (no ball) = SWITCH PLAYER', GAME_W / 2, 140)
+    ctx.fillStyle = '#666688'
+    ctx.font = '6px monospace'
+    ctx.fillText(isMobile ? 'TAP SHOOT to switch mode' : 'UP/DOWN to select', GAME_W / 2, 144)
 
     // Press start (blinking)
     if (this.showPress) {
       ctx.fillStyle = '#ffffff'
       ctx.font = '8px monospace'
-      const isMobile = navigator.maxTouchPoints > 0
       ctx.fillText(isMobile ? 'TAP  KICK  TO  START' : 'PRESS  Z  TO  START', GAME_W / 2, 162)
     }
 

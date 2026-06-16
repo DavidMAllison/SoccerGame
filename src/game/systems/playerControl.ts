@@ -1,4 +1,4 @@
-import type { Player, Ball, ControllerState } from '../types.js'
+import type { Player, Ball, Missile, ControllerState } from '../types.js'
 import {
   PLAYER_SPEED, PLAYER_ACCEL, PLAYER_FRICTION,
   PITCH_X, PITCH_Y, PITCH_W, PITCH_H, PLAYER_RADIUS,
@@ -7,11 +7,40 @@ import {
 } from '../constants.js'
 
 const DRIBBLE_SPEED_FACTOR = 0.80
-const SLIDE_FRICTION = 0.92  // slower deceleration mid-slide
+const SLIDE_FRICTION = 0.92
+
+export const MUSHROOM_SPEED_MULT = 2.0
+export const MUSHROOM_DURATION  = 6    // seconds
+export const BOMB_KNOCKBACK     = 220  // px/s
+export const BOMB_STUN_DURATION = 1.8  // seconds
+
+export const PIE_STUN_DURATION  = 2.0  // seconds
+export const SLIME_SLOW_FACTOR  = 0.45 // multiplier on max speed
+export const SLIME_DURATION     = 3.0  // seconds
+export const MISSILE_SPEED      = 320  // px/s
+export const MISSILE_LIFETIME   = 2.8  // seconds
+export const MISSILE_BLAST_R    = 44   // px explosion radius
+export const MISSILE_KNOCKBACK  = 260  // px/s
+export const MISSILE_STUN       = 2.2  // seconds
 
 export function applyControl(player: Player, ctrl: ControllerState, dt: number) {
+  if (player.pieTimer > 0) player.pieTimer -= dt
+  if (player.slowTimer > 0) player.slowTimer -= dt
+  if (player.stunTimer > 0) {
+    player.stunTimer -= dt
+    const f = Math.pow(SLIDE_FRICTION, dt * 60)
+    player.vel.x *= f
+    player.vel.y *= f
+    player.pos.x += player.vel.x * dt
+    player.pos.y += player.vel.y * dt
+    clampToPitch(player)
+    if (player.kickCooldown > 0) player.kickCooldown -= dt
+    return
+  }
+
+  if (player.speedBoost > 0) player.speedBoost -= dt
+
   if (player.slideTimer > 0) {
-    // Sliding: ignore directional input, just decelerate
     player.slideTimer -= dt
     const f = Math.pow(SLIDE_FRICTION, dt * 60)
     player.vel.x *= f
@@ -33,7 +62,8 @@ export function applyControl(player: Player, ctrl: ControllerState, dt: number) 
     player.facing.y = ny
   }
 
-  const maxSpeed = player.hasBall ? PLAYER_SPEED * DRIBBLE_SPEED_FACTOR : PLAYER_SPEED
+  const boost = player.speedBoost > 0 ? MUSHROOM_SPEED_MULT : player.slowTimer > 0 ? SLIME_SLOW_FACTOR : 1
+  const maxSpeed = (player.hasBall ? PLAYER_SPEED * DRIBBLE_SPEED_FACTOR : PLAYER_SPEED) * boost
   const speed = Math.sqrt(player.vel.x ** 2 + player.vel.y ** 2)
   if (speed > maxSpeed) {
     player.vel.x = (player.vel.x / speed) * maxSpeed
@@ -58,7 +88,6 @@ export function tryKick(
     return 'kick'
   }
   if (ctrl.b) {
-    // Redirect shot toward opponent goal if facing wrong way
     const ownGoalDir = player.team === 0 ? -1 : 1
     if (Math.sign(player.facing.x) === ownGoalDir || Math.abs(player.facing.x) < 0.1) {
       player.facing.x = -ownGoalDir * 0.85
@@ -68,6 +97,25 @@ export function tryKick(
     return 'shoot'
   }
   return null
+}
+
+let _nextMissileId = 0
+
+export function tryFireMissile(player: Player, ctrl: ControllerState): Missile | null {
+  if (!player.hasMissile) return null
+  if (player.hasBall) return null
+  if (player.stunTimer > 0) return null
+  if (!ctrl.b) return null
+
+  player.hasMissile = false
+  return {
+    id: _nextMissileId++,
+    pos: { x: player.pos.x + player.facing.x * 12, y: player.pos.y + player.facing.y * 12 },
+    vel: { x: player.facing.x * MISSILE_SPEED, y: player.facing.y * MISSILE_SPEED },
+    ownerId: player.id,
+    ownerTeam: player.team,
+    lifetime: MISSILE_LIFETIME,
+  }
 }
 
 export function trySlide(player: Player, ctrl: ControllerState): boolean {

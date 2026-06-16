@@ -11,3 +11,8 @@ preview_id = "0637639f7cb44009907ba4344a15f40a"
 binding = "SIMS"
 id = "0283025a9fbb4530bf7d7fd3b15a71bb"
 preview_id = "bc83249b7c8d499fae5aa9d7a8614549"
+
+[[kv_namespaces]]
+binding = "ROOMS"
+id = "a46294745a854a479726c4862432dfe6"
+preview_id = "c187e2a658584dff875c200c51b2b353"

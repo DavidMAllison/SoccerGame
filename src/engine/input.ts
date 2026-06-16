@@ -55,11 +55,13 @@ export function initTouchControls(): void {
   const dpadSize = 114
   const dpad = el('div', {
     position: 'fixed',
-    bottom: '14px', left: '14px',
+    bottom: 'calc(env(safe-area-inset-bottom, 0px) + 14px)',
+    left: 'calc(env(safe-area-inset-left, 0px) + 14px)',
     width: dpadSize + 'px', height: dpadSize + 'px',
     borderRadius: '50%',
-    background: 'rgba(255,255,255,0.13)',
-    border: '2px solid rgba(255,255,255,0.28)',
+    background: 'rgba(0,0,0,0.45)',
+    border: '2px solid rgba(255,255,255,0.55)',
+    boxShadow: '0 2px 18px rgba(0,0,0,0.65)',
     pointerEvents: 'auto',
     touchAction: 'none',
     display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -69,7 +71,8 @@ export function initTouchControls(): void {
   const knob = el('div', {
     width: '36px', height: '36px',
     borderRadius: '50%',
-    background: 'rgba(255,255,255,0.35)',
+    background: 'rgba(255,255,255,0.72)',
+    boxShadow: '0 1px 4px rgba(0,0,0,0.5)',
     transition: 'transform 0.05s',
     pointerEvents: 'none',
   })
@@ -84,7 +87,7 @@ export function initTouchControls(): void {
   ].forEach(([char, pos]) => {
     const a = el('div', {
       position: 'absolute', fontSize: '11px',
-      color: 'rgba(255,255,255,0.4)', lineHeight: '1',
+      color: 'rgba(255,255,255,0.75)', lineHeight: '1',
     })
     a.setAttribute('style', a.getAttribute('style')! + pos)
     a.textContent = char as string
@@ -124,8 +127,8 @@ export function initTouchControls(): void {
   dpad.addEventListener('touchcancel', resetDpad)
 
   // ── Buttons ────────────────────────────────────────────────────────────────
-  const btnA = makeButton('KICK', 'SWITCH', '#c42020', 'rgba(196,32,32,0.75)', 'bottom:80px;right:16px')
-  const btnB = makeButton('SHOOT', '',       '#1a30b8', 'rgba(26,48,184,0.75)', 'bottom:14px;right:16px')
+  const btnA = makeButton('KICK', 'SWITCH', '#c42020', 'rgba(196,32,32,0.75)', 'bottom:calc(env(safe-area-inset-bottom,0px) + 80px);right:calc(env(safe-area-inset-right,0px) + 16px)')
+  const btnB = makeButton('SHOOT', '',       '#1a30b8', 'rgba(26,48,184,0.75)', 'bottom:calc(env(safe-area-inset-bottom,0px) + 14px);right:calc(env(safe-area-inset-right,0px) + 16px)')
 
   wireButton(btnA, 'a')
   wireButton(btnB, 'b')

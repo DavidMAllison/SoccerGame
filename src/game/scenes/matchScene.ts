@@ -1,19 +1,19 @@
 import type { Scene } from '../../engine/scene.js'
-import type { MatchState, MatchConfig, Player, ControllerState } from '../types.js'
+import type { MatchState, MatchConfig, Player, ControllerState, PowerUp, Explosion } from '../types.js'
 import { readP1, readP2 } from '../../engine/input.js'
 import { playSfx } from '../../engine/audio.js'
 import { submitScore } from '../../net/leaderboard.js'
 import { submitSimulation } from '../../net/simulations.js'
 import { GAME_W, GAME_H } from '../../engine/renderer.js'
-import { PITCH_W, PITCH_H, PITCH_Y, DEFAULT_HALF_LENGTH, PLAYER_RADIUS } from '../constants.js'
+import { PITCH_W, PITCH_H, PITCH_X, PITCH_Y, DEFAULT_HALF_LENGTH, PLAYER_RADIUS } from '../constants.js'
 import { getCountry } from '../countries.js'
-import { applyControl, tryKick, trySlide } from '../systems/playerControl.js'
+import { applyControl, tryKick, trySlide, tryFireMissile, MUSHROOM_DURATION, BOMB_KNOCKBACK, BOMB_STUN_DURATION, PIE_STUN_DURATION, MISSILE_BLAST_R, MISSILE_KNOCKBACK, MISSILE_STUN, SLIME_DURATION } from '../systems/playerControl.js'
 import { createCamera, updateCameraForMatch, type Camera } from '../systems/camera.js'
 import { tickBall } from '../systems/ballPhysics.js'
 import { lockBallToOwner, checkPossession } from '../systems/collisions.js'
 import { onGoal, tickRules, startPlay } from '../systems/rules.js'
 import { drawPitch } from '../render/pitch.js'
-import { drawPlayer, drawBall } from '../render/sprites.js'
+import { drawPlayer, drawBall, drawPowerUp, drawMissile, drawExplosion, drawDemogorgon } from '../render/sprites.js'
 import { drawHud } from '../render/hud.js'
 import { assignRoles, type RoleMap } from '../ai/coordinator.js'
 import { keeperControl } from '../ai/goalkeeper.js'
@@ -44,7 +44,8 @@ function initState(config: MatchConfig = DEFAULT_CONFIG): MatchState {
     facing: { x: team === 0 ? 1 : -1, y: 0 },
     hasBall: false, isActive: false, isKeeper,
     slideTimer: 0, kickCooldown: 0,
-    skin: Math.floor(Math.random() * 8),
+    skin: Math.floor(Math.random() * 22),
+    speedBoost: 0, hasBomb: false, hasMissile: false, stunTimer: 0, pieTimer: 0, slowTimer: 0,
   })
 
   const players: Player[] = [
@@ -70,6 +71,8 @@ function initState(config: MatchConfig = DEFAULT_CONFIG): MatchState {
     activePlayer: [3, 8],
     halfLength: DEFAULT_HALF_LENGTH, difficulty: 1,
     config,
+    powerUps: [], powerUpSpawnTimer: 5, nextPowerUpId: 0,
+    missiles: [], explosions: [], nextMissileId: 0,
   }
 }
 
@@ -117,7 +120,109 @@ export class MatchScene implements Scene {
   private nameEntry: NameEntry | null = null
   private simSubmitted = false
 
+  // Multiplayer
+  private multiRole: 'host' | 'guest' | null = null
+  private netChannel: RTCDataChannel | null = null
+  private remoteInput: ControllerState = { dx: 0, dy: 0, a: false, b: false }
+  private sendTimer = 0
+  private stadiumTheme = Math.floor(Math.random() * 5)
+
+  // Demogorgon chaos event
+  private demogorgon: { pos: { x: number; y: number }; vel: { x: number; y: number }; lifetime: number; stunCooldowns: Map<number, number> } | null = null
+  private demogorgonSpawnTimer = 18 + Math.random() * 12
+
   constructor(private matchConfig: MatchConfig = DEFAULT_CONFIG) {}
+
+  initMulti(role: 'host' | 'guest', channel: RTCDataChannel) {
+    this.multiRole = role
+    this.netChannel = channel
+    this.cpu = null  // no AI teams in multiplayer
+    channel.onmessage = (e: MessageEvent) => this.onNetMessage(e.data as string)
+  }
+
+  private onNetMessage(data: string) {
+    try {
+      if (this.multiRole === 'host') {
+        this.remoteInput = JSON.parse(data) as ControllerState
+      } else {
+        this.applySnapshot(JSON.parse(data))
+      }
+    } catch { /* ignore malformed */ }
+  }
+
+  private applySnapshot(snap: {
+    score: [number, number]; phase: string; matchTimer: number; half: number
+    phaseTimer: number; activePlayer: [number, number]; ball: MatchState['ball']
+    players: Array<{ id: number; pos: {x:number;y:number}; vel: {x:number;y:number}; facing: {x:number;y:number}; hasBall: boolean; isActive: boolean; slideTimer: number; kickCooldown: number; skin?: number; speedBoost?: number; hasBomb?: boolean; hasMissile?: boolean; stunTimer?: number; pieTimer?: number; slowTimer?: number }>
+    powerUps?: MatchState['powerUps']
+    missiles?: MatchState['missiles']
+    explosions?: MatchState['explosions']
+    demogorgon?: { pos: {x:number;y:number}; vel: {x:number;y:number}; lifetime: number } | null
+  }) {
+    const { state } = this
+    state.score = snap.score
+    state.phase = snap.phase as MatchState['phase']
+    state.matchTimer = snap.matchTimer
+    state.half = snap.half as 1 | 2
+    state.phaseTimer = snap.phaseTimer
+    state.activePlayer = snap.activePlayer
+    state.ball = snap.ball
+    for (const sp of snap.players) {
+      const p = state.players.find(q => q.id === sp.id)
+      if (!p) continue
+      p.pos = sp.pos; p.vel = sp.vel; p.facing = sp.facing
+      p.hasBall = sp.hasBall; p.isActive = sp.isActive
+      p.slideTimer = sp.slideTimer; p.kickCooldown = sp.kickCooldown
+      if (sp.skin !== undefined) p.skin = sp.skin
+      if (sp.speedBoost !== undefined) p.speedBoost = sp.speedBoost
+      if (sp.hasBomb !== undefined) p.hasBomb = sp.hasBomb
+      if (sp.hasMissile !== undefined) p.hasMissile = sp.hasMissile
+      if (sp.stunTimer !== undefined) p.stunTimer = sp.stunTimer
+      if (sp.pieTimer !== undefined) p.pieTimer = sp.pieTimer
+      if (sp.slowTimer !== undefined) p.slowTimer = sp.slowTimer
+    }
+    if (snap.powerUps) state.powerUps = snap.powerUps
+    if (snap.missiles) state.missiles = snap.missiles
+    if (snap.explosions) state.explosions = snap.explosions
+    if (snap.demogorgon !== undefined) {
+      if (snap.demogorgon === null) {
+        this.demogorgon = null
+      } else {
+        const d = snap.demogorgon
+        if (!this.demogorgon) {
+          this.demogorgon = { pos: d.pos, vel: d.vel, lifetime: d.lifetime, stunCooldowns: new Map() }
+        } else {
+          this.demogorgon.pos = d.pos
+          this.demogorgon.vel = d.vel
+          this.demogorgon.lifetime = d.lifetime
+        }
+      }
+    }
+  }
+
+  private sendState() {
+    if (!this.netChannel || this.netChannel.readyState !== 'open') return
+    const { state } = this
+    const dg = this.demogorgon
+    this.netChannel.send(JSON.stringify({
+      score: state.score, phase: state.phase,
+      matchTimer: state.matchTimer, half: state.half,
+      phaseTimer: state.phaseTimer, activePlayer: state.activePlayer,
+      ball: state.ball,
+      players: state.players.map(p => ({
+        id: p.id, pos: p.pos, vel: p.vel, facing: p.facing,
+        hasBall: p.hasBall, isActive: p.isActive,
+        slideTimer: p.slideTimer, kickCooldown: p.kickCooldown,
+        skin: p.skin,
+        speedBoost: p.speedBoost, hasBomb: p.hasBomb, hasMissile: p.hasMissile,
+        stunTimer: p.stunTimer, pieTimer: p.pieTimer, slowTimer: p.slowTimer,
+      })),
+      powerUps: state.powerUps,
+      missiles: state.missiles,
+      explosions: state.explosions,
+      demogorgon: dg ? { pos: dg.pos, vel: dg.vel, lifetime: dg.lifetime } : null,
+    }))
+  }
 
   onEnter() {
     this.state = initState(this.matchConfig)
@@ -212,6 +317,18 @@ export class MatchScene implements Scene {
   tick(_dt: number) {
     if (this.matchConfig.simulate) return  // sim ran synchronously in onEnter
 
+    // Guest: forward input to host then wait for state snapshots
+    // Use readP1 because touch controls and keyboard arrows feed P1 state
+    if (this.multiRole === 'guest') {
+      const inp = readP1()
+      if (this.netChannel?.readyState === 'open') {
+        this.netChannel.send(JSON.stringify(inp))
+      }
+      const activeP1 = this.state.players.find(p => p.id === this.state.activePlayer[0])!
+      updateCameraForMatch(this.cam, this.state.ball.pos.x, activeP1.pos.x, this.state.ball.owner !== null)
+      return
+    }
+
     const dt = _dt
     const { state } = this
 
@@ -230,7 +347,8 @@ export class MatchScene implements Scene {
     }
 
     const p1 = readP1()
-    const p2 = readP2()
+    // In host mode, team 1 is controlled by the remote guest
+    const p2 = this.multiRole === 'host' ? this.remoteInput : readP2()
 
     // Kickoff start
     if (state.phase === 'kickoff' && (p1.a || p1.b || p2.a || p2.b)) {
@@ -285,7 +403,10 @@ export class MatchScene implements Scene {
       const kicked = tryKick(p, state.ball, ctrl)
       if (kicked) playSfx('kick')
 
-      if (!p.hasBall && trySlide(p, ctrl)) playSfx('tackle')
+      const fired = tryFireMissile(p, ctrl)
+      if (fired) { state.missiles.push(fired); playSfx('shoot') }
+
+      if (!p.hasBall && !fired && trySlide(p, ctrl)) playSfx('tackle')
 
       applyControl(p, ctrl, dt)
     }
@@ -300,6 +421,9 @@ export class MatchScene implements Scene {
     } else {
       checkPossession(state)
       this.checkSlideTackle(state)
+      this.tickPowerUps(state, dt)
+      this.tickMissiles(state, dt)
+      this.tickDemogorgon(state, dt)
       // Auto-switch human team to whoever just picked up the ball
       this.autoSwitchToBallCarrier()
     }
@@ -312,6 +436,12 @@ export class MatchScene implements Scene {
 
     const activeP1 = state.players.find(p => p.id === state.activePlayer[0])!
     updateCameraForMatch(this.cam, state.ball.pos.x, activeP1.pos.x, state.ball.owner !== null)
+
+    // Host: broadcast state to guest at ~20Hz (every 3 ticks)
+    if (this.multiRole === 'host') {
+      this.sendTimer++
+      if (this.sendTimer >= 3) { this.sendTimer = 0; this.sendState() }
+    }
   }
 
   private autoSwitchToBallCarrier() {
@@ -327,18 +457,268 @@ export class MatchScene implements Scene {
   }
 
   private checkSlideTackle(state: MatchState) {
-    if (state.ball.owner !== null) return
     for (const p of state.players) {
       if (p.slideTimer <= 0) continue
-      const dx = p.pos.x - state.ball.pos.x
-      const dy = p.pos.y - state.ball.pos.y
+      const ballOwner = state.ball.owner !== null
+        ? state.players.find(q => q.id === state.ball.owner)
+        : null
+      // Can only tackle an opponent, not a teammate
+      if (ballOwner && ballOwner.team === p.team) continue
+      const tx = ballOwner ? ballOwner.pos.x : state.ball.pos.x
+      const ty = ballOwner ? ballOwner.pos.y : state.ball.pos.y
+      const dx = p.pos.x - tx
+      const dy = p.pos.y - ty
       if (Math.sqrt(dx * dx + dy * dy) < PLAYER_RADIUS + 6) {
+        if (ballOwner) {
+          ballOwner.hasBall = false
+          ballOwner.kickCooldown = 0.4
+        }
         for (const q of state.players) q.hasBall = false
         state.ball.owner = p.id
+        state.ball.pos.x = p.pos.x
+        state.ball.pos.y = p.pos.y
         p.hasBall = true
         p.kickCooldown = 0.2
         break
       }
+    }
+  }
+
+  private tickPowerUps(state: MatchState, dt: number) {
+    if (state.phase !== 'play') return
+
+    // Advance timers on existing power-ups
+    for (const pu of state.powerUps) pu.spawnTimer += dt
+
+    // Spawn new power-up every ~8s, max 3 on field
+    state.powerUpSpawnTimer -= dt
+    if (state.powerUpSpawnTimer <= 0 && state.powerUps.length < 3) {
+      const r = Math.random()
+      const type: PowerUp['type'] = r < 0.22 ? 'turbo' : r < 0.40 ? 'mushroom' : r < 0.55 ? 'missile' : r < 0.68 ? 'slime' : r < 0.82 ? 'bomb' : 'pie'
+      const margin = 30
+      state.powerUps.push({
+        id: state.nextPowerUpId++,
+        type,
+        pos: {
+          x: PITCH_X + margin + Math.random() * (PITCH_W - margin * 2),
+          y: PITCH_Y + margin + Math.random() * (PITCH_H - margin * 2),
+        },
+        spawnTimer: 0,
+      })
+      state.powerUpSpawnTimer = 7 + Math.random() * 5
+    }
+
+    // Check player-pickup collisions
+    const PICKUP_R = 10
+    for (let i = state.powerUps.length - 1; i >= 0; i--) {
+      const pu = state.powerUps[i]
+      for (const p of state.players) {
+        if (p.stunTimer > 0) continue
+        const dx = p.pos.x - pu.pos.x
+        const dy = p.pos.y - pu.pos.y
+        if (Math.sqrt(dx * dx + dy * dy) > PICKUP_R) continue
+        // Picked up!
+        if (pu.type === 'slime') {
+          p.slowTimer = SLIME_DURATION
+          playSfx('tackle')
+        } else if (pu.type === 'turbo') {
+          p.speedBoost = 3
+          playSfx('kick')
+        } else if (pu.type === 'mushroom') {
+          p.speedBoost = MUSHROOM_DURATION
+          playSfx('kick')
+        } else if (pu.type === 'bomb') {
+          p.hasBomb = true
+          playSfx('tackle')
+        } else if (pu.type === 'missile') {
+          p.hasMissile = true
+          playSfx('kick')
+        } else {
+          // PIE IN THE FACE
+          p.stunTimer = PIE_STUN_DURATION
+          p.pieTimer = PIE_STUN_DURATION
+          p.vel.x = (Math.random() - 0.5) * 60
+          p.vel.y = (Math.random() - 0.5) * 60
+          if (state.ball.owner === p.id) {
+            p.hasBall = false
+            state.ball.owner = null
+          }
+          playSfx('goal')
+        }
+        state.powerUps.splice(i, 1)
+        break
+      }
+    }
+
+    // Check bomb explosions: bomb carrier touches opponent
+    const BOMB_R = 12
+    for (const carrier of state.players) {
+      if (!carrier.hasBomb) continue
+      for (const victim of state.players) {
+        if (victim.id === carrier.id) continue
+        if (victim.team === carrier.team) continue
+        if (victim.stunTimer > 0) continue
+        const dx = carrier.pos.x - victim.pos.x
+        const dy = carrier.pos.y - victim.pos.y
+        if (Math.sqrt(dx * dx + dy * dy) > BOMB_R) continue
+        // BOOM
+        carrier.hasBomb = false
+        victim.stunTimer = BOMB_STUN_DURATION
+        // Knock victim away from carrier
+        const len = Math.sqrt(dx * dx + dy * dy) || 1
+        victim.vel.x = -(dx / len) * BOMB_KNOCKBACK
+        victim.vel.y = -(dy / len) * BOMB_KNOCKBACK
+        // Drop ball if victim had it
+        if (state.ball.owner === victim.id) {
+          victim.hasBall = false
+          state.ball.owner = null
+        }
+        playSfx('goal')
+      }
+    }
+  }
+
+  private tickMissiles(state: MatchState, dt: number) {
+    // Advance explosion timers
+    for (let i = state.explosions.length - 1; i >= 0; i--) {
+      state.explosions[i].timer -= dt
+      if (state.explosions[i].timer <= 0) state.explosions.splice(i, 1)
+    }
+
+    if (state.missiles.length === 0) return
+
+    const HIT_R = 8
+    for (let i = state.missiles.length - 1; i >= 0; i--) {
+      const m = state.missiles[i]
+      m.lifetime -= dt
+      m.pos.x += m.vel.x * dt
+      m.pos.y += m.vel.y * dt
+
+      let exploded = m.lifetime <= 0
+
+      if (!exploded) {
+        for (const p of state.players) {
+          if (p.id === m.ownerId) continue
+          if (p.team === m.ownerTeam) continue
+          const dx = p.pos.x - m.pos.x
+          const dy = p.pos.y - m.pos.y
+          if (Math.sqrt(dx * dx + dy * dy) < HIT_R + 6) {
+            exploded = true
+            break
+          }
+        }
+      }
+
+      if (exploded) {
+        state.missiles.splice(i, 1)
+
+        const ex: Explosion = { id: state.nextMissileId++, pos: { ...m.pos }, timer: 0.65, maxTimer: 0.65 }
+        state.explosions.push(ex)
+        playSfx('goal')
+
+        // Blast all nearby players
+        for (const p of state.players) {
+          if (p.id === m.ownerId) continue
+          const dx = p.pos.x - m.pos.x
+          const dy = p.pos.y - m.pos.y
+          const dist = Math.sqrt(dx * dx + dy * dy)
+          if (dist > MISSILE_BLAST_R) continue
+          const falloff = 1 - dist / MISSILE_BLAST_R
+          const len = dist || 1
+          p.stunTimer = MISSILE_STUN * falloff + 0.5
+          p.vel.x = (dx / len) * MISSILE_KNOCKBACK * falloff
+          p.vel.y = (dy / len) * MISSILE_KNOCKBACK * falloff
+          if (state.ball.owner === p.id) {
+            p.hasBall = false
+            state.ball.owner = null
+          }
+        }
+      }
+    }
+  }
+
+  private tickDemogorgon(state: MatchState, dt: number) {
+    if (state.phase !== 'play') return
+
+    // Countdown to next spawn
+    if (!this.demogorgon) {
+      this.demogorgonSpawnTimer -= dt
+      if (this.demogorgonSpawnTimer > 0) return
+
+      // Spawn on a random pitch edge
+      const side = Math.floor(Math.random() * 4)
+      let sx: number, sy: number
+      if (side === 0)      { sx = PITCH_X + Math.random() * PITCH_W; sy = PITCH_Y }
+      else if (side === 1) { sx = PITCH_X + Math.random() * PITCH_W; sy = PITCH_Y + PITCH_H }
+      else if (side === 2) { sx = PITCH_X;          sy = PITCH_Y + Math.random() * PITCH_H }
+      else                 { sx = PITCH_X + PITCH_W; sy = PITCH_Y + Math.random() * PITCH_H }
+
+      this.demogorgon = { pos: { x: sx, y: sy }, vel: { x: 0, y: 0 }, lifetime: 9, stunCooldowns: new Map() }
+      playSfx('goal')
+      return
+    }
+
+    const dg = this.demogorgon
+    dg.lifetime -= dt
+
+    if (dg.lifetime <= 0) {
+      this.demogorgon = null
+      this.demogorgonSpawnTimer = 30 + Math.random() * 20
+      return
+    }
+
+    // Tick per-player stun cooldowns
+    for (const [id, t] of dg.stunCooldowns) {
+      const newT = t - dt
+      if (newT <= 0) dg.stunCooldowns.delete(id)
+      else dg.stunCooldowns.set(id, newT)
+    }
+
+    // Chase: prioritise ball carrier, else nearest player
+    let target = state.players.find(p => p.id === state.ball.owner) ?? null
+    if (!target) {
+      let best = Infinity
+      for (const p of state.players) {
+        const dx = p.pos.x - dg.pos.x; const dy = p.pos.y - dg.pos.y
+        const d = dx * dx + dy * dy
+        if (d < best) { best = d; target = p }
+      }
+    }
+
+    if (target) {
+      const dx = target.pos.x - dg.pos.x
+      const dy = target.pos.y - dg.pos.y
+      const len = Math.sqrt(dx * dx + dy * dy) || 1
+      const speed = 90 + Math.sin(dg.lifetime * 4) * 20  // speed pulsates
+      dg.vel.x = (dx / len) * speed
+      dg.vel.y = (dy / len) * speed
+    }
+    dg.pos.x += dg.vel.x * dt
+    dg.pos.y += dg.vel.y * dt
+
+    // Clamp to pitch
+    dg.pos.x = Math.max(PITCH_X + 8, Math.min(PITCH_X + PITCH_W - 8, dg.pos.x))
+    dg.pos.y = Math.max(PITCH_Y + 8, Math.min(PITCH_Y + PITCH_H - 8, dg.pos.y))
+
+    // Contact — stun any player within range
+    const CONTACT_R = 14
+    for (const p of state.players) {
+      if (dg.stunCooldowns.has(p.id)) continue
+      const dx = p.pos.x - dg.pos.x; const dy = p.pos.y - dg.pos.y
+      if (Math.sqrt(dx * dx + dy * dy) > CONTACT_R) continue
+
+      p.stunTimer = 2.5
+      const angle = Math.random() * Math.PI * 2
+      p.vel.x = Math.cos(angle) * 180
+      p.vel.y = Math.sin(angle) * 180
+      if (state.ball.owner === p.id) {
+        p.hasBall = false
+        state.ball.owner = null
+        state.ball.vel.x = Math.cos(angle + Math.PI) * 200
+        state.ball.vel.y = Math.sin(angle + Math.PI) * 200
+      }
+      dg.stunCooldowns.set(p.id, 2)
+      playSfx('goal')
     }
   }
 
@@ -350,10 +730,16 @@ export class MatchScene implements Scene {
       return
     }
 
-    drawPitch(ctx, cam.x)
+    drawPitch(ctx, cam.x, this.stadiumTheme)
+
+    for (const pu of state.powerUps) drawPowerUp(ctx, pu, cam)
 
     const sorted = [...state.players].sort((a, b) => a.pos.y - b.pos.y)
     for (const p of sorted) drawPlayer(ctx, p, cam, state.config.teams)
+
+    for (const m of state.missiles) drawMissile(ctx, m, cam)
+    for (const ex of state.explosions) drawExplosion(ctx, ex, cam)
+    if (this.demogorgon) drawDemogorgon(ctx, this.demogorgon.pos, this.demogorgon.lifetime, cam)
 
     drawBall(ctx, state.ball, cam)
     drawHud(ctx, state)

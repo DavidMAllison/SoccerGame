@@ -46,8 +46,9 @@ function withBallControl(
 
   // How close to goal (normalised 0-1)
   const proximity = 1 - clamp(dist(player.pos, target) / PITCH_W, 0, 1)
-  // Shoot when close enough or at high difficulty
-  const shootThreshold = difficulty === 3 ? 0.35 : difficulty === 2 ? 0.45 : 0.55
+  // Threshold chosen so ball friction doesn't kill the shot before it reaches goal:
+  // max horiz range ≈ 178px; threshold 0.70 → fires within 154px ✓
+  const shootThreshold = difficulty === 3 ? 0.60 : difficulty === 2 ? 0.65 : 0.70
 
   return {
     dx: dir.x,
