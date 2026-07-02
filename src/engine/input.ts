@@ -3,9 +3,10 @@ export interface ControllerState {
   dy: number   // -1, 0, 1
   a: boolean   // kick / pass / switch player
   b: boolean   // shoot / slide
+  c?: boolean  // dodge dash (human-only; AI never sets it)
 }
 
-export const EMPTY_CONTROLLER: ControllerState = { dx: 0, dy: 0, a: false, b: false }
+export const EMPTY_CONTROLLER: ControllerState = { dx: 0, dy: 0, a: false, b: false, c: false }
 
 // ── Keyboard ──────────────────────────────────────────────────────────────────
 const held = new Set<string>()
@@ -21,6 +22,7 @@ export function readP1(): ControllerState {
     dy: (held.has('ArrowDown')  ? 1 : 0) - (held.has('ArrowUp')   ? 1 : 0) || touch.dy,
     a:  held.has('KeyZ') || touch.a,
     b:  held.has('KeyX') || touch.b,
+    c:  held.has('KeyC') || touch.c,
   }
 }
 
@@ -30,11 +32,12 @@ export function readP2(): ControllerState {
     dy: (held.has('KeyS') ? 1 : 0) - (held.has('KeyW') ? 1 : 0),
     a:  held.has('KeyG'),
     b:  held.has('KeyH'),
+    c:  held.has('KeyJ'),
   }
 }
 
 // ── Touch state ───────────────────────────────────────────────────────────────
-const touch = { dx: 0, dy: 0, a: false, b: false }
+const touch = { dx: 0, dy: 0, a: false, b: false, c: false }
 
 // ── Touch overlay ─────────────────────────────────────────────────────────────
 export function initTouchControls(): void {
@@ -129,13 +132,16 @@ export function initTouchControls(): void {
   // ── Buttons ────────────────────────────────────────────────────────────────
   const btnA = makeButton('KICK', 'SWITCH', '#c42020', 'rgba(196,32,32,0.75)', 'bottom:calc(env(safe-area-inset-bottom,0px) + 80px);right:calc(env(safe-area-inset-right,0px) + 16px)')
   const btnB = makeButton('SHOOT', '',       '#1a30b8', 'rgba(26,48,184,0.75)', 'bottom:calc(env(safe-area-inset-bottom,0px) + 14px);right:calc(env(safe-area-inset-right,0px) + 16px)')
+  const btnC = makeButton('DODGE', '',       '#18a038', 'rgba(24,160,56,0.75)', 'bottom:calc(env(safe-area-inset-bottom,0px) + 14px);right:calc(env(safe-area-inset-right,0px) + 90px)')
 
   wireButton(btnA, 'a')
   wireButton(btnB, 'b')
+  wireButton(btnC, 'c')
 
   overlay.appendChild(dpad)
   overlay.appendChild(btnA)
   overlay.appendChild(btnB)
+  overlay.appendChild(btnC)
   document.body.appendChild(overlay)
 }
 
@@ -168,7 +174,7 @@ function updateDpad(
   knob.style.transform = `translate(${nx * clampR}px, ${ny * clampR}px)`
 }
 
-function wireButton(btn: HTMLElement, key: 'a' | 'b') {
+function wireButton(btn: HTMLElement, key: 'a' | 'b' | 'c') {
   btn.addEventListener('touchstart', e => {
     e.preventDefault()
     touch[key] = true

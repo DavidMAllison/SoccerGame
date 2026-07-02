@@ -7,7 +7,7 @@ import { submitSimulation } from '../../net/simulations.js'
 import { GAME_W, GAME_H } from '../../engine/renderer.js'
 import { PITCH_W, PITCH_H, PITCH_X, PITCH_Y, DEFAULT_HALF_LENGTH, PLAYER_RADIUS } from '../constants.js'
 import { getCountry } from '../countries.js'
-import { applyControl, tryKick, trySlide, tryFireMissile, MUSHROOM_DURATION, BOMB_KNOCKBACK, BOMB_STUN_DURATION, PIE_STUN_DURATION, MISSILE_BLAST_R, MISSILE_KNOCKBACK, MISSILE_STUN, SLIME_DURATION } from '../systems/playerControl.js'
+import { applyControl, tryKick, trySlide, tryDodge, tryFireMissile, MUSHROOM_DURATION, BOMB_KNOCKBACK, BOMB_STUN_DURATION, PIE_STUN_DURATION, MISSILE_BLAST_R, MISSILE_KNOCKBACK, MISSILE_STUN, SLIME_DURATION } from '../systems/playerControl.js'
 import { createCamera, updateCameraForMatch, type Camera } from '../systems/camera.js'
 import { tickBall } from '../systems/ballPhysics.js'
 import { lockBallToOwner, checkPossession } from '../systems/collisions.js'
@@ -46,6 +46,7 @@ function initState(config: MatchConfig = DEFAULT_CONFIG): MatchState {
     slideTimer: 0, kickCooldown: 0,
     skin: Math.floor(Math.random() * 22),
     speedBoost: 0, hasBomb: false, hasMissile: false, stunTimer: 0, pieTimer: 0, slowTimer: 0,
+    dodgeTimer: 0, dodgeCooldown: 0,
   })
 
   const players: Player[] = [
@@ -153,7 +154,7 @@ export class MatchScene implements Scene {
   private applySnapshot(snap: {
     score: [number, number]; phase: string; matchTimer: number; half: number
     phaseTimer: number; activePlayer: [number, number]; ball: MatchState['ball']
-    players: Array<{ id: number; pos: {x:number;y:number}; vel: {x:number;y:number}; facing: {x:number;y:number}; hasBall: boolean; isActive: boolean; slideTimer: number; kickCooldown: number; skin?: number; speedBoost?: number; hasBomb?: boolean; hasMissile?: boolean; stunTimer?: number; pieTimer?: number; slowTimer?: number }>
+    players: Array<{ id: number; pos: {x:number;y:number}; vel: {x:number;y:number}; facing: {x:number;y:number}; hasBall: boolean; isActive: boolean; slideTimer: number; kickCooldown: number; skin?: number; speedBoost?: number; hasBomb?: boolean; hasMissile?: boolean; stunTimer?: number; pieTimer?: number; slowTimer?: number; dodgeTimer?: number }>
     powerUps?: MatchState['powerUps']
     missiles?: MatchState['missiles']
     explosions?: MatchState['explosions']
@@ -180,6 +181,7 @@ export class MatchScene implements Scene {
       if (sp.stunTimer !== undefined) p.stunTimer = sp.stunTimer
       if (sp.pieTimer !== undefined) p.pieTimer = sp.pieTimer
       if (sp.slowTimer !== undefined) p.slowTimer = sp.slowTimer
+      if (sp.dodgeTimer !== undefined) p.dodgeTimer = sp.dodgeTimer
     }
     if (snap.powerUps) state.powerUps = snap.powerUps
     if (snap.missiles) state.missiles = snap.missiles
@@ -216,6 +218,7 @@ export class MatchScene implements Scene {
         skin: p.skin,
         speedBoost: p.speedBoost, hasBomb: p.hasBomb, hasMissile: p.hasMissile,
         stunTimer: p.stunTimer, pieTimer: p.pieTimer, slowTimer: p.slowTimer,
+        dodgeTimer: p.dodgeTimer,
       })),
       powerUps: state.powerUps,
       missiles: state.missiles,
@@ -408,6 +411,8 @@ export class MatchScene implements Scene {
 
       if (!p.hasBall && !fired && trySlide(p, ctrl)) playSfx('tackle')
 
+      if (tryDodge(p, ctrl)) playSfx('dodge')
+
       applyControl(p, ctrl, dt)
     }
 
@@ -464,6 +469,8 @@ export class MatchScene implements Scene {
         : null
       // Can only tackle an opponent, not a teammate
       if (ballOwner && ballOwner.team === p.team) continue
+      // Dodging carrier is immune to slide tackles
+      if (ballOwner && ballOwner.dodgeTimer > 0) continue
       const tx = ballOwner ? ballOwner.pos.x : state.ball.pos.x
       const ty = ballOwner ? ballOwner.pos.y : state.ball.pos.y
       const dx = p.pos.x - tx

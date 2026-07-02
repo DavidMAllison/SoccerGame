@@ -28,6 +28,8 @@ export interface Player {
   stunTimer: number  // > 0 while stunned from explosion
   pieTimer: number   // > 0 while pie-faced (cream splat visual)
   slowTimer: number  // > 0 while slimed (half speed)
+  dodgeTimer: number    // > 0 while dodge-dashing (immune to slide tackles)
+  dodgeCooldown: number // > 0 while dodge is recharging
 }
 
 export type PowerUpType = 'mushroom' | 'bomb' | 'pie' | 'missile' | 'turbo' | 'slime'

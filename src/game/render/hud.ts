@@ -46,8 +46,8 @@ export function drawHud(ctx: CanvasRenderingContext2D, state: MatchState) {
   ctx.font = '6px monospace'
   ctx.textAlign = 'center'
   if (isMobile) {
-    ctx.fillText('D-PAD:MOVE   KICK:PASS/SWITCH   SHOOT:LOFT', GAME_W / 2, 26)
+    ctx.fillText('D-PAD:MOVE   KICK:PASS/SWITCH   SHOOT:LOFT   DODGE:DASH', GAME_W / 2, 26)
   } else {
-    ctx.fillText('ARROWS:MOVE   Z:KICK/SWITCH   X:SHOOT   M:MUTE', GAME_W / 2, 26)
+    ctx.fillText('ARROWS:MOVE   Z:KICK/SWITCH   X:SHOOT   C:DODGE   M:MUTE', GAME_W / 2, 26)
   }
 }

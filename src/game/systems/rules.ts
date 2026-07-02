@@ -29,6 +29,8 @@ function resetFormation(state: MatchState) {
     p.hasBall = false
     p.kickCooldown = 0
     p.slideTimer = 0
+    p.dodgeTimer = 0
+    p.dodgeCooldown = 0
     p.facing.x = p.team === 0 ? 1 : -1
     p.facing.y = 0
   }
