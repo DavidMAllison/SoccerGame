@@ -3,6 +3,18 @@ import { PITCH_W, PITCH_H, PITCH_Y, GOAL_Y, GOAL_WIDTH } from '../constants.js'
 import type { Role } from './coordinator.js'
 import { seek, interceptPoint, dist, clamp } from './steering.js'
 
+const TACKLE_RANGE = 32  // px — how close before CPU considers sliding
+
+function shouldSlide(player: Player, state: MatchState, difficulty: 1 | 2 | 3): boolean {
+  if (state.ball.owner === null) return false
+  const owner = state.players.find(p => p.id === state.ball.owner)
+  if (!owner || owner.team === player.team) return false
+  if (dist(player.pos, owner.pos) > TACKLE_RANGE) return false
+  // Per-tick probability; trySlide enforces its own KICK_COOLDOWN so this won't spam
+  const chance = difficulty === 3 ? 0.08 : difficulty === 2 ? 0.04 : 0.02
+  return Math.random() < chance
+}
+
 const ATTACK_GOAL_Y = GOAL_Y + GOAL_WIDTH / 2  // centre of opponent's goal
 
 export function fieldPlayerControl(
@@ -61,7 +73,7 @@ function withBallControl(
 function chaserControl(
   player: Player,
   state: MatchState,
-  _difficulty: 1 | 2 | 3,
+  difficulty: 1 | 2 | 3,
 ): ControllerState {
   const { ball } = state
 
@@ -72,7 +84,7 @@ function chaserControl(
     : ball.pos
 
   const dir = seek(player.pos, target)
-  return { dx: dir.x, dy: dir.y, a: false, b: false }
+  return { dx: dir.x, dy: dir.y, a: false, b: shouldSlide(player, state, difficulty) }
 }
 
 function supportControl(
@@ -98,7 +110,7 @@ function supportControl(
 function defendControl(
   player: Player,
   state: MatchState,
-  _difficulty: 1 | 2 | 3,
+  difficulty: 1 | 2 | 3,
 ): ControllerState {
   const { ball } = state
   const ownGoalX = player.team === 0 ? 0 : PITCH_W
@@ -114,5 +126,5 @@ function defendControl(
 
   const dir = seek(player.pos, { x: targetX, y: targetY })
   const close = dist(player.pos, { x: targetX, y: targetY }) < 10
-  return { dx: close ? 0 : dir.x, dy: close ? 0 : dir.y, a: false, b: false }
+  return { dx: close ? 0 : dir.x, dy: close ? 0 : dir.y, a: false, b: shouldSlide(player, state, difficulty) }
 }
