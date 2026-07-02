@@ -20,6 +20,20 @@ export function drawPlayer(
   ctx.translate(sx, sy)
   if (sliding) ctx.rotate(angle)
 
+  // Dodge dash: white afterimages trailing opposite the burst direction
+  if (p.dodgeTimer > 0) {
+    const bx = -p.vel.x * 0.035
+    const by = -p.vel.y * 0.035
+    ctx.fillStyle = '#ffffff'
+    for (let i = 1; i <= 2; i++) {
+      ctx.globalAlpha = 0.22 / i
+      ctx.beginPath()
+      ctx.ellipse(bx * i, by * i - 4, 5, 8, 0, 0, Math.PI * 2)
+      ctx.fill()
+    }
+    ctx.globalAlpha = 1
+  }
+
   // Ground shadow
   ctx.fillStyle = 'rgba(0,0,0,0.3)'
   ctx.beginPath()

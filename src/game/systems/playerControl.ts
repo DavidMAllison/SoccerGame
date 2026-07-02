@@ -23,9 +23,15 @@ export const MISSILE_BLAST_R    = 44   // px explosion radius
 export const MISSILE_KNOCKBACK  = 260  // px/s
 export const MISSILE_STUN       = 2.2  // seconds
 
+export const DODGE_SPEED    = 200  // px/s burst
+export const DODGE_DURATION = 0.22 // seconds of dash + tackle immunity
+export const DODGE_COOLDOWN = 1.2  // seconds before next dodge
+
 export function applyControl(player: Player, ctrl: ControllerState, dt: number) {
   if (player.pieTimer > 0) player.pieTimer -= dt
   if (player.slowTimer > 0) player.slowTimer -= dt
+  if (player.dodgeTimer > 0) player.dodgeTimer -= dt
+  if (player.dodgeCooldown > 0) player.dodgeCooldown -= dt
   if (player.stunTimer > 0) {
     player.stunTimer -= dt
     const f = Math.pow(SLIDE_FRICTION, dt * 60)
@@ -63,7 +69,9 @@ export function applyControl(player: Player, ctrl: ControllerState, dt: number) 
   }
 
   const boost = player.speedBoost > 0 ? MUSHROOM_SPEED_MULT : player.slowTimer > 0 ? SLIME_SLOW_FACTOR : 1
-  const maxSpeed = (player.hasBall ? PLAYER_SPEED * DRIBBLE_SPEED_FACTOR : PLAYER_SPEED) * boost
+  const maxSpeed = player.dodgeTimer > 0
+    ? DODGE_SPEED
+    : (player.hasBall ? PLAYER_SPEED * DRIBBLE_SPEED_FACTOR : PLAYER_SPEED) * boost
   const speed = Math.sqrt(player.vel.x ** 2 + player.vel.y ** 2)
   if (speed > maxSpeed) {
     player.vel.x = (player.vel.x / speed) * maxSpeed
@@ -116,6 +124,32 @@ export function tryFireMissile(player: Player, ctrl: ControllerState): Missile |
     ownerTeam: player.team,
     lifetime: MISSILE_LIFETIME,
   }
+}
+
+export function tryDodge(player: Player, ctrl: ControllerState): boolean {
+  if (!ctrl.c) return false
+  if (player.dodgeCooldown > 0) return false
+  if (player.stunTimer > 0) return false
+  if (player.slideTimer > 0) return false
+
+  let nx: number, ny: number
+  if (ctrl.dx !== 0 || ctrl.dy !== 0) {
+    const len = Math.sqrt(ctrl.dx * ctrl.dx + ctrl.dy * ctrl.dy)
+    nx = ctrl.dx / len
+    ny = ctrl.dy / len
+  } else {
+    // Standing still: sidestep perpendicular to facing
+    nx = -player.facing.y
+    ny = player.facing.x
+  }
+
+  player.vel.x = nx * DODGE_SPEED
+  player.vel.y = ny * DODGE_SPEED
+  player.facing.x = nx
+  player.facing.y = ny
+  player.dodgeTimer = DODGE_DURATION
+  player.dodgeCooldown = DODGE_COOLDOWN
+  return true
 }
 
 export function trySlide(player: Player, ctrl: ControllerState): boolean {

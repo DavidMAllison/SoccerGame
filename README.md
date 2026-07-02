@@ -11,9 +11,12 @@ Browser-based replica of Nintendo Soccer (1985), hosted on Cloudflare Pages.
 | Move | Arrow keys |
 | Kick / Switch player | Z |
 | Shoot (lofted) | X |
+| Dodge (dash, immune to slide tackles) | C |
 | Mute | M |
 
-Mobile: on-screen d-pad + KICK/SHOOT buttons.
+Player 2 (local): WASD to move, G kick, H shoot, J dodge.
+
+Mobile: on-screen d-pad + KICK/SHOOT/DODGE buttons.
 
 ## Stack
 
